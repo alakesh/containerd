@@ -30,6 +30,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
+
+	"time"
 )
 
 var pullCommand = cli.Command{
@@ -124,6 +126,7 @@ command. As part of this process, we do the following:
 			p = append(p, platforms.DefaultSpec())
 		}
 
+		start := time.Now()
 		for _, platform := range p {
 			fmt.Printf("unpacking %s %s...\n", platforms.Format(platform), img.Target.Digest)
 			i := containerd.NewImageWithPlatform(client, img, platforms.Only(platform))
@@ -140,8 +143,7 @@ command. As part of this process, we do the following:
 				fmt.Printf("image chain ID: %s\n", chainID)
 			}
 		}
-
-		fmt.Println("done")
+		fmt.Printf("done: %-4.1fs\t\n", time.Since(start))
 		return nil
 	},
 }
