@@ -48,6 +48,7 @@ import (
 	processor "go.opentelemetry.io/otel/sdk/metric/processor/basic"
 	"go.opentelemetry.io/otel/sdk/metric/selector/simple"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const usage = `
@@ -293,6 +294,11 @@ can be used and modified as necessary as a custom configuration.`
 }
 
 func serve(ctx gocontext.Context, l net.Listener, serveFunc func(net.Listener) error) {
+	span := trace.SpanFromContext(ctx)
+	log.G(ctx).Debugf("Current span: %v", span)
+	_, serve_span := (span.Tracer()).Start(ctx, "serve")
+	defer serve_span.End()
+
 	path := l.Addr().String()
 	log.G(ctx).WithField("address", path).Info("serving...")
 	go func() {
