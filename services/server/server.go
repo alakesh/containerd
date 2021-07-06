@@ -48,9 +48,13 @@ import (
 	"github.com/containerd/containerd/sys"
 	"github.com/containerd/ttrpc"
 	metrics "github.com/docker/go-metrics"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -95,8 +99,14 @@ func New(ctx context.Context, config *srvconfig.Config) (*Server, error) {
 	}
 
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
-		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
+			otelgrpc.StreamServerInterceptor(),
+			grpc.StreamServerInterceptor(grpc_prometheus.StreamServerInterceptor),
+		)),
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+			otelgrpc.UnaryServerInterceptor(),
+			grpc.UnaryServerInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		)),
 	}
 	if config.GRPC.MaxRecvMsgSize > 0 {
 		serverOpts = append(serverOpts, grpc.MaxRecvMsgSize(config.GRPC.MaxRecvMsgSize))
@@ -236,6 +246,9 @@ type Server struct {
 
 // ServeGRPC provides the containerd grpc APIs on the provided listener
 func (s *Server) ServeGRPC(l net.Listener) error {
+	_, grpcSpan := otel.GetTracerProvider().Tracer("grpc-containerd").Start(nil, "grpc-root-span", trace.WithNewRoot())
+	defer grpcSpan.End()
+
 	if s.config.Metrics.GRPCHistogram {
 		// enable grpc time histograms to measure rpc latencies
 		grpc_prometheus.EnableHandlingTimeHistogram()
@@ -249,6 +262,9 @@ func (s *Server) ServeGRPC(l net.Listener) error {
 
 // ServeTTRPC provides the containerd ttrpc APIs on the provided listener
 func (s *Server) ServeTTRPC(l net.Listener) error {
+	_, ttrpcSpan := otel.GetTracerProvider().Tracer("ttrpc-containerd").Start(nil, "ttrpc-root-span", trace.WithNewRoot())
+	defer ttrpcSpan.End()
+
 	return trapClosedConnErr(s.ttrpcServer.Serve(context.Background(), l))
 }
 
