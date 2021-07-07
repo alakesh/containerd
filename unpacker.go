@@ -137,6 +137,11 @@ EachLayer:
 
 		// inherits annotations which are provided as snapshot labels.
 		labels := snapshots.FilterInheritedLabels(desc.Annotations)
+
+		log.G(ctx).Debugf("Printing inherited lables %s", chainID)
+		for key, value := range labels {
+			log.G(ctx).Debugf("inherited key: %s : value: %s", key, value)
+		}
 		if labels == nil {
 			labels = make(map[string]string)
 		}
