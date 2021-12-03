@@ -285,6 +285,8 @@ func (s *snapshotter) createSnapshot(ctx context.Context, key, parent string, re
 	s.l.RLock()
 	defer s.l.RUnlock()
 
+	isSharedNS := false
+
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, err
@@ -310,6 +312,24 @@ func (s *snapshotter) createSnapshot(ctx context.Context, key, parent string, re
 		}
 	)
 
+	if err := view(ctx, s.db, func(tx *bolt.Tx) error {
+		bkt := getNamespaceLabelsBucket(tx, ns)
+		if err != nil {
+			return err
+		}
+
+		nslabels, err := boltutil.ReadLabels(bkt)
+		if err != nil {
+			return err
+		}
+		if nslabels[labels.LabelSharedNamespace] == "true" {
+			isSharedNS = true
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
 	if err := update(ctx, s.db, func(tx *bolt.Tx) error {
 		bkt, err := createSnapshotterBucket(tx, ns, s.name)
 		if err != nil {
@@ -329,6 +349,19 @@ func (s *snapshotter) createSnapshot(ctx context.Context, key, parent string, re
 
 		if parent != "" {
 			pbkt := bkt.Bucket([]byte(parent))
+
+			if isSharedNS {
+				labels, er := boltutil.ReadLabels(pbkt)
+				if er != nil {
+					return er
+				}
+				if labels == nil {
+					labels = make(map[string]string)
+				}
+				labels["containerd.io/gc.root"] = time.Now().UTC().Format(time.RFC3339)
+				boltutil.WriteLabels(pbkt, labels)
+			}
+
 			if pbkt == nil {
 				return errors.Wrapf(errdefs.ErrNotFound, "parent snapshot %v does not exist", parent)
 			}
